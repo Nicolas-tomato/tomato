@@ -1,0 +1,232 @@
+/*****************************************************
+ File name :touch.c
+ Create date :2015-10-19 10:03
+ Modified date :2015-10-19 10:03
+ Author : FanJie
+ 
+ ****************************************************/
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include "album.h"
+#include <pthread.h>
+
+extern Filename *head; 
+struct read_xy
+{
+	int x;
+	int y;
+	int ps;
+}val1,val2;
+int fd;
+int get_xy(void)
+{
+	int L_R=0,U_D=0;
+	int a=0,b=0,i=0,j=0;
+	struct input_event even_ts;
+	while(1)
+	{
+		ssize_t ret = read(fd,&even_ts,sizeof(struct input_event));
+		if(ret != sizeof(struct input_event))
+		{
+			perror("read error");
+		}
+		else
+			if(even_ts.type == EV_ABS)//判断是否为触摸屏
+			{
+
+				if(even_ts.code == ABS_PRESSURE)//判断为压力值
+				{
+					val1.ps=even_ts.value;
+					printf("PS:%d\n",even_ts.value);
+				}
+				else if(i==0&&even_ts.code == ABS_X)//判断为X轴
+				{
+					val1.x=even_ts.value;
+					i=1;
+				}
+				else if(j==0&&even_ts.code == ABS_Y)//判断为Y轴
+				{
+					val1.y=even_ts.value;
+					j=1;
+				}
+				
+				if(i==1&&j==1)
+				{
+					i=0;
+					j=0;
+					
+					printf("X:%d\tY:%d\t",val1.x,val1.y);
+					printf("\n");
+				}
+				if(val1.ps==200)
+				{
+					if(b==0)//保存第一次读取的值到val2
+					{
+						val2.x=val1.x;
+						val2.y=val1.y;	
+						a=1;
+					}
+					b++;
+					
+				}
+				else if(a==1&&val1.ps==0)
+				{	
+					if(val1.x-val2.x>65)
+					{
+						//printf("right\n");
+						L_R=1;
+					}
+					else if(val1.x-val2.x<-65)
+					{
+						//printf("left\n");
+						L_R=2;
+					}
+						else
+							L_R=0;
+					if(val1.y-val2.y>65)
+					{
+						//printf("up\n");
+						U_D=1;
+					}
+					else if(val1.y-val2.y<-65)
+					{
+						//printf("down\n");
+						U_D=2;
+					}
+						else
+							U_D=0;
+					b=0;
+					a=0;
+					break;
+					//return 0;
+				}
+				
+			}
+	}
+	if(L_R==0)//x不动
+	{
+		if(U_D==0)//按下
+			return 0;
+		else if(U_D==1)//上滑
+			return 1;
+		else		//下滑
+			return 2;
+	}
+	else if(L_R==1)//x右
+	{
+		if(U_D==0)//右滑
+			return 3;
+		else if(U_D==1)//右上
+			return 4;
+		else		//右下
+			return 5;
+	}
+	else//x左
+	{
+		if(U_D==0)//左滑
+			return 6;
+		else if(U_D==1)//左上
+			return 7;
+		else		//左下
+			return 8;
+	}	
+}
+void get_ts(void)
+{
+	Filename *new = NULL;
+	//list_next_entry(head, list);
+	new = list_first_entry(&head->list, typeof(*new), list);
+	//list_for_each_entry(new,&head->list,list);
+	int a,b=0;
+	while(1)
+	{
+		a=get_xy();
+		switch(a)
+		{
+			case 0:printf("touch\n",a);break;
+			/*case 1:printf("up\n",a);break;
+			case 2:printf("down\n",a);break;
+			case 3:printf("right\n",a);break;
+			case 4:printf("right&up\n",a);break;
+			case 5:printf("right&down\n",a);break;
+			case 6:printf("left\n",a);break;
+			case 7:printf("left&up\n",a);break;
+			case 8:printf("lef&down\n",a);break;*/
+
+			case 1:
+			case 6:
+			case 7:
+			case 8:
+					new=list_next_entry(new,list);
+					if(new==head)
+						new=list_next_entry(new,list);
+					display1(new->name);
+					break;
+			case 2:					
+			case 3:
+			case 4:
+			case 5:
+					new=list_prev_entry(new,list);
+					if(new==head)
+						new=list_prev_entry(new,list);
+					display2(new->name);
+					break;
+
+
+		}
+		if(a==0&&val1.x<100&&val1.y<100)
+		{
+			if(b==0)
+			{	
+				printf("Music!\n");
+				system("madplay /mp3/test.mp3 &\n");//播放音乐
+				b=1;
+			}
+			else if(b==1)
+			{
+				printf("Music Shut!\n");
+				system("killall -STOP madplay &\n");//暂停
+				b=2;
+			}
+			else if(b==2)
+			{
+				printf("Music Continue!\n");
+				system("killall -CONT madplay &\n");//继续
+				b=1;
+			}
+			//system("killall -STOP madplay &\n");//暂停
+			//system("killall -CONT madplay &\n");//继续
+			//system("killall madplay &\n");//停止
+		}
+		if(a==0&&val1.x<100&&val1.y>350)
+		{
+			printf("Music Stop\n");
+			system("killall madplay &\n");//停止
+			b=0;	
+		}
+	}
+}
+int main(void)
+{
+	pthread_t thread_id;
+	fd = open("/dev/event0",O_RDWR);
+	if(fd == -1)
+	{
+		perror("open error");
+		exit(1);
+	}
+	name_add();
+	pthread_create(&thread_id,NULL,(void *)get_ts,NULL);
+	
+	pthread_join(thread_id,NULL);
+	close(fd);
+	return 0;
+
+}
